@@ -1,0 +1,169 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Nexus.App.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+        x:Class="Nexus.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="NEXUS — Multi-Agent Orchestrator"
+        MinWidth="900" MinHeight="600"
+        Background="#181825">
+
+    <DockPanel>
+
+        <!-- Region 1: Task Input bar -->
+        <Border DockPanel.Dock="Top" Padding="12,8" Background="#1E1E2E"
+                BorderThickness="0,0,0,1" BorderBrush="#45475A">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="NEXUS" FontSize="18" FontWeight="Bold"
+                           Foreground="#CBA6F7" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                <Button DockPanel.Dock="Right" Content="Submit"
+                        Command="{Binding SubmitCommand}"
+                        Padding="16,6" Margin="8,0,0,0"
+                        Background="#CBA6F7" Foreground="#1E1E2E" FontWeight="SemiBold"/>
+                <TextBox Text="{Binding TaskInput}"
+                         PlaceholderText="Describe the task to decompose and run..."
+                         VerticalAlignment="Center" Background="#313244" Foreground="#CDD6F4"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Region 4: Activity log (bottom, UC-03 step 3 / FR-32) -->
+        <Border DockPanel.Dock="Bottom" Height="150" Background="#1E1E2E"
+                BorderThickness="0,1,0,0" BorderBrush="#45475A">
+            <DockPanel Margin="8,6,8,6">
+                <TextBlock DockPanel.Dock="Top" Text="Activity Log" FontWeight="SemiBold"
+                           Foreground="#6C7086" FontSize="11" Margin="0,0,0,4"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding ActivityLog}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" Foreground="#BAC2DE"
+                                           FontSize="11" FontFamily="Cascadia Code,Consolas,Monospace"
+                                           Margin="0,1"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- Region 3: Agent status panel (right) -->
+        <Border DockPanel.Dock="Right" Width="200" Padding="8" Background="#1E1E2E"
+                BorderThickness="1,0,0,0" BorderBrush="#45475A">
+            <StackPanel>
+                <TextBlock Text="Agents" FontWeight="SemiBold" Foreground="#CDD6F4"
+                           Margin="0,4,0,8" FontSize="13"/>
+                <ItemsControl ItemsSource="{Binding Agents}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AgentStatusViewModel">
+                            <Border Padding="6,4" Margin="0,2" CornerRadius="4" Background="#313244">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Ellipse DockPanel.Dock="Left" Width="8" Height="8"
+                                                 Margin="0,0,6,0" VerticalAlignment="Center"
+                                                 Fill="{Binding DotColor}"/>
+                                        <TextBlock Text="{Binding AgentId}" Foreground="#CDD6F4"
+                                                   FontSize="12" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding LastSeen}" Foreground="#6C7086"
+                                               FontSize="10" Margin="14,2,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- Region 2: Task board (kanban) -->
+        <Grid ColumnDefinitions="*,*,*,*" Margin="8,8,8,8">
+
+            <!-- Pending -->
+            <StackPanel Grid.Column="0" Margin="4">
+                <Border Background="#45475A" CornerRadius="6,6,0,0" Padding="8,5">
+                    <TextBlock Text="PENDING" FontWeight="Bold" Foreground="#F38BA8" FontSize="11"/>
+                </Border>
+                <ItemsControl ItemsSource="{Binding PendingTasks}" Background="#1E1E2E">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TaskCardViewModel">
+                            <Border Background="#313244" CornerRadius="4" Padding="8" Margin="0,2">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding TaskId}" FontWeight="SemiBold"
+                                               Foreground="#CDD6F4" FontSize="13"/>
+                                    <TextBlock Text="Waiting..." Foreground="#6C7086" FontSize="11"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Running -->
+            <StackPanel Grid.Column="1" Margin="4">
+                <Border Background="#45475A" CornerRadius="6,6,0,0" Padding="8,5">
+                    <TextBlock Text="RUNNING" FontWeight="Bold" Foreground="#FAB387" FontSize="11"/>
+                </Border>
+                <ItemsControl ItemsSource="{Binding RunningTasks}" Background="#1E1E2E">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TaskCardViewModel">
+                            <Border Background="#313244" CornerRadius="4" Padding="8" Margin="0,2">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding TaskId}" FontWeight="SemiBold"
+                                               Foreground="#CDD6F4" FontSize="13"/>
+                                    <ProgressBar Value="{Binding ProgressPercent}" Maximum="100"
+                                                 Height="6" Margin="0,4,0,2" Foreground="#FAB387"/>
+                                    <TextBlock Text="{Binding StatusNote}" Foreground="#6C7086"
+                                               FontSize="10"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Done -->
+            <StackPanel Grid.Column="2" Margin="4">
+                <Border Background="#45475A" CornerRadius="6,6,0,0" Padding="8,5">
+                    <TextBlock Text="DONE" FontWeight="Bold" Foreground="#A6E3A1" FontSize="11"/>
+                </Border>
+                <ItemsControl ItemsSource="{Binding DoneTasks}" Background="#1E1E2E">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TaskCardViewModel">
+                            <Border Background="#313244" CornerRadius="4" Padding="8" Margin="0,2">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding TaskId}" FontWeight="SemiBold"
+                                               Foreground="#CDD6F4" FontSize="13"/>
+                                    <TextBlock Text="Done" Foreground="#A6E3A1" FontSize="11"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Failed -->
+            <StackPanel Grid.Column="3" Margin="4">
+                <Border Background="#45475A" CornerRadius="6,6,0,0" Padding="8,5">
+                    <TextBlock Text="FAILED" FontWeight="Bold" Foreground="#F38BA8" FontSize="11"/>
+                </Border>
+                <ItemsControl ItemsSource="{Binding FailedTasks}" Background="#1E1E2E">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TaskCardViewModel">
+                            <Border Background="#313244" CornerRadius="4" Padding="8" Margin="0,2">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding TaskId}" FontWeight="SemiBold"
+                                               Foreground="#CDD6F4" FontSize="13"/>
+                                    <TextBlock Text="Failed" Foreground="#F38BA8" FontSize="11"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+        </Grid>
+    </DockPanel>
+
+</Window>
