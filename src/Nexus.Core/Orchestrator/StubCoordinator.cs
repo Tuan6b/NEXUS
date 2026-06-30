@@ -1,6 +1,6 @@
 namespace Nexus.Core.Orchestrator;
 
-public sealed class StubCoordinator
+public sealed class StubCoordinator : ICoordinator
 {
     /// <summary>
     /// Returns a canned 2-task decomposition: auth (no deps) and booking (depends on auth).

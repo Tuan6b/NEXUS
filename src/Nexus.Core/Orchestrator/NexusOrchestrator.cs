@@ -7,13 +7,13 @@ namespace Nexus.Core.Orchestrator;
 
 public sealed class NexusOrchestrator
 {
-    private readonly StubCoordinator _coordinator;
+    private readonly ICoordinator _coordinator;
     private readonly IAgentAdapter _adapter;
     private readonly IEventSink _sink;
     // taskId → instruction text; populated per SubmitAsync call, consumed in RunOneAsync
     private readonly Dictionary<string, string> _instructions = new(StringComparer.Ordinal);
 
-    public NexusOrchestrator(StubCoordinator coordinator, IAgentAdapter adapter, IEventSink sink)
+    public NexusOrchestrator(ICoordinator coordinator, IAgentAdapter adapter, IEventSink sink)
     {
         _coordinator = coordinator;
         _adapter = adapter;

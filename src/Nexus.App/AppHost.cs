@@ -19,6 +19,7 @@ public sealed class AppHost : IAsyncDisposable
     private readonly SqliteConnection _db;
     private readonly TaskRepository _taskRepo;
     private readonly AgentRepository _agentRepo;
+    private readonly ICoordinator _coordinator;
     private readonly NexusOrchestrator _orchestrator;
     private readonly CancellationTokenSource _cts = new();
     private Task? _consumerTask;
@@ -42,9 +43,12 @@ public sealed class AppHost : IAsyncDisposable
         // Register the single-writer handler
         _pipeline.RegisterHandler(HandleEventAsync);
 
-        var coordinator = new StubCoordinator();
+        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
+        _coordinator = apiKey.Length > 0
+            ? new ClaudeCoordinator(apiKey)
+            : new StubCoordinator();
         var adapter = new StubAdapter(_pipeline);
-        _orchestrator = new NexusOrchestrator(coordinator, adapter, _pipeline);
+        _orchestrator = new NexusOrchestrator(_coordinator, adapter, _pipeline);
     }
 
     public async Task StartAsync()
@@ -109,6 +113,7 @@ public sealed class AppHost : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
         await _pipeline.DisposeAsync();
+        if (_coordinator is IDisposable d) d.Dispose();
         _db.Dispose();
         _cts.Dispose();
     }
