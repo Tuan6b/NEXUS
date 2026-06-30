@@ -136,16 +136,29 @@ public sealed class NexusOrchestrator
     private static async Task WriteContractFilesAsync(
         string worktreePath, ContractGenerationResult contract, CancellationToken ct)
     {
-        await WriteFileAsync(
-            Path.Combine(worktreePath, ToOsPath(contract.InterfacePath)), contract.InterfaceCode, ct);
-        await WriteFileAsync(
-            Path.Combine(worktreePath, ToOsPath(contract.TestPath)), contract.TestCode, ct);
+        await WriteFileAsync(worktreePath, contract.InterfacePath, contract.InterfaceCode, ct);
+        await WriteFileAsync(worktreePath, contract.TestPath, contract.TestCode, ct);
     }
 
-    private static async Task WriteFileAsync(string path, string content, CancellationToken ct)
+    // Writes content to a path that must stay inside worktreePath.
+    // Dual guard: cheap string check first, then GetFullPath normalisation.
+    // Both are needed — the string check rejects obvious traversal early with a clear message;
+    // GetFullPath catches normalisation edge cases (e.g. "src/./../../leak").
+    private static async Task WriteFileAsync(
+        string worktreePath, string relPath, string content, CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8, ct);
+        if (Path.IsPathRooted(relPath) || relPath.Split('/', '\\').Any(p => p == ".."))
+            throw new InvalidOperationException(
+                $"Contract path must be relative and must not traverse upward: {relPath}");
+
+        var fullPath = Path.GetFullPath(Path.Combine(worktreePath, ToOsPath(relPath)));
+        var baseDir = Path.GetFullPath(worktreePath) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(baseDir, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Contract path escapes the worktree boundary: {relPath}");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await File.WriteAllTextAsync(fullPath, content, System.Text.Encoding.UTF8, ct);
     }
 
     private static string ToOsPath(string relativePath) =>

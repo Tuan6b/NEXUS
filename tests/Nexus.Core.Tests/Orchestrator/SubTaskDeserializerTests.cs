@@ -88,4 +88,36 @@ public class SubTaskDeserializerTests
 
         Assert.Contains("Cannot parse decomposition JSON", ex.Message);
     }
+
+    // ── Module name validation (path-traversal guard) ─────────────────────────
+
+    [Theory]
+    [InlineData("../../etc/passwd")]
+    [InlineData("../evil")]
+    [InlineData("Auth")]            // uppercase rejected
+    [InlineData("auth module")]     // spaces rejected
+    [InlineData("")]                // empty rejected
+    public void Parse_InvalidModuleName_ThrowsInvalidOperation(string badModule)
+    {
+        var json = $$"""{"subtasks":[{"module":"{{badModule}}","instruction":"i","owns_files":[],"depends_on":[]}]}""";
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SubTaskDeserializer.Parse(json));
+
+        Assert.Contains("invalid module name", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("auth")]
+    [InlineData("booking-service")]
+    [InlineData("module1")]
+    [InlineData("a")]
+    public void Parse_ValidModuleName_DoesNotThrow(string goodModule)
+    {
+        var json = $$"""{"subtasks":[{"module":"{{goodModule}}","instruction":"i","owns_files":[],"depends_on":[]}]}""";
+
+        var result = SubTaskDeserializer.Parse(json);
+
+        Assert.Equal(goodModule, result[0].ModuleName);
+    }
 }

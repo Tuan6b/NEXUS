@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Nexus.Core.Parsing;
 
 namespace Nexus.Core.Orchestrator;
@@ -8,6 +9,12 @@ namespace Nexus.Core.Orchestrator;
 // Kept separate from ClaudeCoordinator so it can be unit-tested without HTTP.
 public static class SubTaskDeserializer
 {
+    // Strict allowlist: lowercase kebab-case, 1-64 chars.
+    // Validated here so the check covers all downstream consumers:
+    // worktree paths, git branch names, event payloads, and file writes.
+    private static readonly Regex ValidModuleName =
+        new(@"^[a-z0-9][a-z0-9_-]{0,63}$", RegexOptions.Compiled);
+
     public static IReadOnlyList<SubTask> Parse(string raw)
     {
         var json = StdoutSanitizer.ExtractJson(raw)
@@ -30,11 +37,18 @@ public static class SubTaskDeserializer
                 "Coordinator returned no subtasks — check the model output and retry.");
 
         return dto.Subtasks
-            .Select(s => new SubTask(
-                s.Module,
-                s.Instruction,
-                s.OwnsFiles?.ToArray() ?? Array.Empty<string>(),
-                s.DependsOn?.ToArray() ?? Array.Empty<string>()))
+            .Select(s =>
+            {
+                if (!ValidModuleName.IsMatch(s.Module))
+                    throw new InvalidOperationException(
+                        $"Coordinator returned invalid module name '{s.Module}'. " +
+                        "Module names must be lowercase kebab-case (a-z, 0-9, -, _), 1-64 chars.");
+                return new SubTask(
+                    s.Module,
+                    s.Instruction,
+                    s.OwnsFiles?.ToArray() ?? Array.Empty<string>(),
+                    s.DependsOn?.ToArray() ?? Array.Empty<string>());
+            })
             .ToList();
     }
 
