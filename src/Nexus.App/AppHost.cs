@@ -9,18 +9,17 @@ using TaskStatus = Nexus.Core.Domain.TaskStatus;
 
 namespace Nexus.App;
 
-/// <summary>
-/// Wires the pipeline, repositories, orchestrator, and UI notification callbacks.
-/// The single consumer loop here is the ONLY writer to SQLite.
-/// </summary>
+// Wires the pipeline, repositories, orchestrator, and UI notification callbacks.
+// The single consumer loop here is the ONLY writer to SQLite.
 public sealed class AppHost : IAsyncDisposable
 {
     private readonly EventPipeline _pipeline;
     private readonly SqliteConnection _db;
     private readonly TaskRepository _taskRepo;
     private readonly AgentRepository _agentRepo;
-    private readonly ICoordinator _coordinator;
-    private readonly NexusOrchestrator _orchestrator;
+    // Coordinator and orchestrator are initialised in StartAsync (CLI detection is async).
+    private ICoordinator _coordinator = null!;
+    private NexusOrchestrator _orchestrator = null!;
     private readonly CancellationTokenSource _cts = new();
     private Task? _consumerTask;
 
@@ -39,21 +38,21 @@ public sealed class AppHost : IAsyncDisposable
         _taskRepo = new TaskRepository(_db);
         _agentRepo = new AgentRepository(_db);
         _pipeline = new EventPipeline();
-
-        // Register the single-writer handler
         _pipeline.RegisterHandler(HandleEventAsync);
-
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
-        _coordinator = apiKey.Length > 0
-            ? new ClaudeCoordinator(apiKey)
-            : new StubCoordinator();
-        var adapter = new StubAdapter(_pipeline);
-        _orchestrator = new NexusOrchestrator(_coordinator, adapter, _pipeline);
     }
 
     public async Task StartAsync()
     {
-        // Crash recovery: reload open tasks from SQLite
+        // Detect coordinator CLI before anything else so the check is off the
+        // constructor path (async-safe) and the result can be logged to the UI.
+        _coordinator = await ClaudeCliCoordinator.IsCliInstalledAsync()
+            ? new ClaudeCliCoordinator()
+            : new StubCoordinator();
+
+        var adapter = new StubAdapter(_pipeline);
+        _orchestrator = new NexusOrchestrator(_coordinator, adapter, _pipeline);
+
+        // Crash recovery: reload open tasks from SQLite.
         var openTasks = (await _taskRepo.LoadOpenTasksAsync()).ToList();
         if (openTasks.Count > 0)
             TasksRestored?.Invoke(openTasks);
