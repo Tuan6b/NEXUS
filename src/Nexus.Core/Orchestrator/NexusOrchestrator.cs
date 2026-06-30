@@ -1,5 +1,6 @@
 using Nexus.Core.Adapters;
 using Nexus.Core.Domain;
+using Nexus.Core.Git;
 using Nexus.Core.Pipeline;
 using TaskStatus = Nexus.Core.Domain.TaskStatus;
 
@@ -10,14 +11,19 @@ public sealed class NexusOrchestrator
     private readonly ICoordinator _coordinator;
     private readonly IAgentAdapter _adapter;
     private readonly IEventSink _sink;
+    private readonly ShadowRepo? _shadowRepo;
+    private readonly string? _projectRoot;
     // taskId → instruction text; populated per SubmitAsync call, consumed in RunOneAsync
     private readonly Dictionary<string, string> _instructions = new(StringComparer.Ordinal);
 
-    public NexusOrchestrator(ICoordinator coordinator, IAgentAdapter adapter, IEventSink sink)
+    public NexusOrchestrator(ICoordinator coordinator, IAgentAdapter adapter, IEventSink sink,
+        ShadowRepo? shadowRepo = null, string? projectRoot = null)
     {
         _coordinator = coordinator;
         _adapter = adapter;
         _sink = sink;
+        _shadowRepo = shadowRepo;
+        _projectRoot = projectRoot;
     }
 
     public async Task SubmitAsync(string instruction, CancellationToken ct)
@@ -27,6 +33,24 @@ public sealed class NexusOrchestrator
         var cycle = FindCycle(subTasks);
         if (cycle is not null)
             throw new InvalidOperationException($"Circular dependency detected: {cycle}");
+
+        // FR-27: prepare shadow repo and per-module worktrees before spawning agents.
+        if (_shadowRepo is not null)
+        {
+            await _shadowRepo.EnsureInitializedAsync(ct);
+            foreach (var s in subTasks)
+                await _shadowRepo.EnsureWorktreeAsync(s.ModuleName, ct);
+        }
+
+        // FR-03: generate Java interface + JUnit test for each module (UC-01 step 5).
+        foreach (var s in subTasks)
+        {
+            var contract = await _coordinator.GenerateContractAsync(s, ct);
+            if (_shadowRepo is not null)
+                await WriteContractFilesAsync(_shadowRepo.GetWorktreePath(s.ModuleName), contract, ct);
+            await _sink.PublishCriticalAsync(
+                new ContractPublishedEvent(contract.Module, "interface", contract.InterfacePath), ct);
+        }
 
         var agentId = _adapter.Type;
         var items = subTasks
@@ -40,8 +64,14 @@ public sealed class NexusOrchestrator
             await _sink.PublishCriticalAsync(new TaskCreatedEvent(item), ct);
 
         // Instance ID is distinct from adapter type ("stub" → "stub-agent-1")
-        var agentInfo = new AgentInfo($"{agentId}-agent-1", _adapter.Type, _adapter.Source, AgentLiveStatus.Alive, DateTimeOffset.UtcNow);
+        var agentInfo = new AgentInfo(
+            $"{agentId}-agent-1", _adapter.Type, _adapter.Source, AgentLiveStatus.Alive, DateTimeOffset.UtcNow);
         await _sink.PublishCriticalAsync(new AgentRegisteredEvent(agentInfo), ct);
+
+        // FR-29: snapshot project HEAD before agents touch anything (dev-edit guard).
+        if (_projectRoot is not null)
+            _ = await ShadowRepo.TryGetProjectHeadHashAsync(_projectRoot, ct);
+            // TODO FR-29: persist hash and compare at merge time
 
         _ = Task.Run(() => RunAllAsync(items, ct), ct)
               .ContinueWith(
@@ -97,10 +127,29 @@ public sealed class NexusOrchestrator
 
     private void ReportRunFailure(AggregateException ex, List<TaskItem> items)
     {
-        System.Diagnostics.Debug.WriteLine($"[NexusOrchestrator] RunAllAsync faulted: {ex.GetBaseException().Message}");
+        System.Diagnostics.Debug.WriteLine(
+            $"[NexusOrchestrator] RunAllAsync faulted: {ex.GetBaseException().Message}");
         foreach (var item in items)
             _ = _sink.PublishCriticalAsync(new TaskStatusChangedEvent(item.Id, TaskStatus.Failed)).AsTask();
     }
+
+    private static async Task WriteContractFilesAsync(
+        string worktreePath, ContractGenerationResult contract, CancellationToken ct)
+    {
+        await WriteFileAsync(
+            Path.Combine(worktreePath, ToOsPath(contract.InterfacePath)), contract.InterfaceCode, ct);
+        await WriteFileAsync(
+            Path.Combine(worktreePath, ToOsPath(contract.TestPath)), contract.TestCode, ct);
+    }
+
+    private static async Task WriteFileAsync(string path, string content, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, content, System.Text.Encoding.UTF8, ct);
+    }
+
+    private static string ToOsPath(string relativePath) =>
+        relativePath.Replace('/', Path.DirectorySeparatorChar);
 
     // UC-01 Alt 4a: detect circular dependencies before spawning any tasks.
     // Returns a human-readable cycle path (e.g. "auth → booking → auth"), or null if clean.

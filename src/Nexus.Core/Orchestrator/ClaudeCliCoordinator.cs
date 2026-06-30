@@ -59,11 +59,34 @@ public sealed class ClaudeCliCoordinator : ICoordinator
         catch { return false; }
     }
 
+    private const string ContractPrompt =
+        "You are a Java architect. Generate a Java interface and a JUnit 5 unit test for the module below.\n" +
+        "Output ONLY valid JSON between <<<JSON>>> and <<<END>>> markers — no markdown fences, no explanation.\n" +
+        "Schema: {\"interface_path\":\"<relative Maven path under src/main/java>\",\"interface_code\":\"<full Java interface source>\"," +
+        "\"test_path\":\"<relative Maven path under src/test/java>\",\"test_code\":\"<full JUnit 5 test source>\"}\n" +
+        "Rules:\n" +
+        "- Paths are relative to the project root (e.g. \"src/main/java/com/example/auth/IAuthService.java\").\n" +
+        "- The interface declares every public method for the instruction; each method has a one-line JavaDoc.\n" +
+        "- The test file has one @Test per interface method verifying a meaningful postcondition.\n" +
+        "- Both files must be syntactically valid Java 17.\n" +
+        "- The interface file must NOT contain an implementation class.\n";
+
     public async Task<IReadOnlyList<SubTask>> DecomposeAsync(string instruction, CancellationToken ct)
     {
         var prompt = $"{SystemPrompt}\n\nUser request: {instruction}";
         var stdout = await _processRunner(prompt, ct);
         return SubTaskDeserializer.Parse(stdout);
+    }
+
+    public async Task<ContractGenerationResult> GenerateContractAsync(SubTask subTask, CancellationToken ct)
+    {
+        var prompt =
+            $"{ContractPrompt}\n" +
+            $"Module: {subTask.ModuleName}\n" +
+            $"Instruction: {subTask.Instruction}\n" +
+            $"Owns files: {string.Join(", ", subTask.OwnsFiles)}";
+        var stdout = await _processRunner(prompt, ct);
+        return ContractResultDeserializer.Parse(subTask.ModuleName, stdout);
     }
 
     private static async Task<string> SpawnAsync(string prompt, string? model, CancellationToken ct)

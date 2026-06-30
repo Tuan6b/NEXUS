@@ -94,6 +94,43 @@ public class ClaudeCliCoordinatorTests
         Assert.Equal("x", result[0].ModuleName);
     }
 
+    // ── GenerateContractAsync ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GenerateContractAsync_ValidJsonInMarkers_ParsesResult()
+    {
+        const string output = """
+            <<<JSON>>>
+            {
+              "interface_path": "src/main/java/IAuthService.java",
+              "interface_code": "public interface IAuthService {}",
+              "test_path": "src/test/java/AuthServiceTest.java",
+              "test_code": "class AuthServiceTest {}"
+            }
+            <<<END>>>
+            """;
+        var sut = Coordinator(Task.FromResult(output));
+        var subTask = new SubTask("auth", "Implement auth", new[] { "src/auth/**" }, Array.Empty<string>());
+
+        var result = await sut.GenerateContractAsync(subTask, default);
+
+        Assert.Equal("auth", result.Module);
+        Assert.Equal("src/main/java/IAuthService.java", result.InterfacePath);
+    }
+
+    [Fact]
+    public async Task GenerateContractAsync_ProcessRunnerThrows_PropagatesException()
+    {
+        var sut = Coordinator(Task.FromException<string>(
+            new InvalidOperationException("Claude CLI exited with code 1: quota exceeded")));
+        var subTask = new SubTask("auth", "Impl auth", new[] { "src/auth/**" }, Array.Empty<string>());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.GenerateContractAsync(subTask, default));
+
+        Assert.Contains("quota exceeded", ex.Message);
+    }
+
     private static ClaudeCliCoordinator Coordinator(Task<string> result) =>
         new(processRunner: (_, _) => result);
 }

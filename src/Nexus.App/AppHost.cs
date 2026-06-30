@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Nexus.Core.Adapters;
 using Nexus.Core.Domain;
+using Nexus.Core.Git;
 using Nexus.Core.Orchestrator;
 using Nexus.Core.Pipeline;
 using Nexus.State;
@@ -49,8 +50,15 @@ public sealed class AppHost : IAsyncDisposable
             ? new ClaudeCliCoordinator()
             : new StubCoordinator();
 
+        // NEXUS_PROJECT_ROOT: the Java project NEXUS is orchestrating.
+        // Defaults to CWD so launching NEXUS from within the project root just works.
+        // Override via the env var until UC-09 (settings UI) is implemented.
+        var projectRoot = Environment.GetEnvironmentVariable("NEXUS_PROJECT_ROOT")
+            ?? Environment.CurrentDirectory;
+        var shadowRepo = new ShadowRepo(Path.Combine(projectRoot, ".nexus"));
+
         var adapter = new StubAdapter(_pipeline);
-        _orchestrator = new NexusOrchestrator(_coordinator, adapter, _pipeline);
+        _orchestrator = new NexusOrchestrator(_coordinator, adapter, _pipeline, shadowRepo, projectRoot);
 
         // Crash recovery: reload open tasks from SQLite.
         var openTasks = (await _taskRepo.LoadOpenTasksAsync()).ToList();
@@ -94,6 +102,11 @@ public sealed class AppHost : IAsyncDisposable
             case AgentRegisteredEvent e:
                 await _agentRepo.UpsertAsync(e.Agent);
                 AgentRegistered?.Invoke(e.Agent);
+                break;
+
+            case ContractPublishedEvent:
+                // Contract files written to worktree during SubmitAsync (FR-03).
+                // Persisting contract metadata to SQLite is deferred (Contracts table, M1).
                 break;
 
             case TaskCompletedEvent:
